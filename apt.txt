@@ -1,0 +1,3 @@
+cmake
+libopenblas-dev
+liblapack-dev
