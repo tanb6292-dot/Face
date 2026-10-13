@@ -45,9 +45,20 @@ async def check_video(file: UploadFile = File(...)):
         frame_count += 1
         # ဖရိမ်တိုင်းကို Efficiency ကောင်းစေရန် Frame ကျော်ပြီး စစ်ဆေးခြင်း (ဥပမာ - ၁၀ ဖရိမ်တစ်ခါ)
         if frame_count % 10 == 0:
+                suspect_gray = cv2.resize(suspect_img, (100, 100))
+    match_found = False
+    frame_count = 0
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        frame_count += 1
+        # ဖရိမ်ကျော်မှုကို လျှော့ချလိုက်သည် (ဥပမာ - ၃ ဖရိမ်တစ်ခါ စစ်မည်)
+        if frame_count % 3 == 0:
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # မျက်နှာရှာဖွေရန် Haar Cascade ကို အသုံးပြုခြင်း
             face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
             faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
@@ -55,12 +66,11 @@ async def check_video(file: UploadFile = File(...)):
                 face_roi = gray_frame[y:y+h, x:x+w]
                 face_resized = cv2.resize(face_roi, (100, 100))
                 
-                # ပုံနှစ်ခု တူညီမှုနှုန်းကို တိုက်စစ်ခြင်း (Template Matching)
                 res = cv2.matchTemplate(face_resized, suspect_gray, cv2.TM_CCOEFF_NORMED)
                 _, max_val, _, _ = cv2.minMaxLoc(res)
 
-                # တူညီမှုနှုန်း 60% ကျော်ပါက တရားခံတွေ့ရှိဟု သတ်မှတ်မည်
-                if max_val > 0.6:
+                # ⚠️ တူညီမှုနှုန်း Threshold ကို 0.4 သို့ လျှော့ချပေးလိုက်သည် (ပိုမိုလွယ်ကူစွာ ဖမ်းမိစေရန်)
+                if max_val > 0.4:
                     match_found = True
                     break
 
