@@ -38,7 +38,7 @@ async def check_video(file: UploadFile = File(...)):
             res = cv2.matchTemplate(frame_resized, suspect_gray, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, _ = cv2.minMaxLoc(res)
 
-            if max_val > 0.25:
+            if max_val > 0.15:
                 match_found = True
                 break
 
