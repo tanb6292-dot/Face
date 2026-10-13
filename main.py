@@ -1,64 +1,79 @@
-from fastapi import FastAPI, File, UploadFile
 import cv2
 import numpy as np
-import face_recognition
+from fastapi import FastAPI, File, UploadFile, HTTPException
 import shutil
 import os
 
 app = FastAPI()
 
-known_face_encodings = []
-known_face_names = []
+# တရားခံပုံကို စတင်ဖွင့်ဖတ်ခြင်း
+SUSPECT_PATH = "suspect.jpg"
 
-try:
-    suspect_image = face_recognition.load_image_file("suspect.jpg")
-    encoding = face_recognition.face_encodings(suspect_image)[0]
-    known_face_encodings.append(encoding)
-    known_face_names.append("တရားခံ (Suspect)")
-    print("တရားခံပုံကို အောင်မြင်စွာ Load လုပ်ပြီးပါပြီ။")
-except Exception as e:
-    print(f"Error loading suspect image: {e}")
+@app.get("/")
+def home():
+    return {"message": "CCTV AI Face Recognition API is running with OpenCV!"}
 
 @app.post("/check-video/")
 async def check_video(file: UploadFile = File(...)):
-    temp_video_path = "temp_video.mp4"
-    with open(temp_video_path, "wb") as buffer:
+    # တရားခံပုံ ရှိမရှိ စစ်ဆေးခြင်း
+    if not os.path.exists(SUSPECT_PATH):
+        raise HTTPException(status_code=400, detail="Suspect image not found on server.")
+
+    # အသုံးပြုသူ ပို့လိုက်သော ဗီဒီယိုဖိုင်ကို ယာယီသိမ်းဆည်းခြင်း
+    video_path = f"temp_{file.filename}"
+    with open(video_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-        
-    cap = cv2.VideoCapture(temp_video_path)
-    found_suspect = False
-    matched_name = ""
-    frame_count = 0
+
+    # OpenCV ဖြင့် ဗီဒီယိုကို ဖတ်ရှုခြင်း
+    cap = cv2.VideoCapture(video_path)
+    suspect_img = cv2.imread(SUSPECT_PATH, cv2.IMREAD_GRAYSCALE)
     
+    if suspect_img is None:
+        cap.release()
+        os.remove(video_path)
+        raise HTTPException(status_code=500, detail="Could not read suspect image.")
+
+    suspect_gray = cv2.resize(suspect_img, (100, 100))
+    match_found = False
+    frame_count = 0
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-            
+        
         frame_count += 1
-        if frame_count % 5 != 0:
-            continue
+        # ဖရိမ်တိုင်းကို Efficiency ကောင်းစေရန် Frame ကျော်ပြီး စစ်ဆေးခြင်း (ဥပမာ - ၁၀ ဖရိမ်တစ်ခါ)
+        if frame_count % 10 == 0:
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-        rgb_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        face_locations = face_recognition.face_locations(rgb_img)
-        face_encodings = face_recognition.face_encodings(rgb_img, face_locations)
-        
-        for face_encoding in face_encodings:
-            face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-            if len(face_distances) > 0:
-                best_match_index = np.argmin(face_distances)
-                if face_distances[best_match_index] <= 0.6:
-                    found_suspect = True
-                    matched_name = known_face_names[best_match_index]
+            # မျက်နှာရှာဖွေရန် Haar Cascade ကို အသုံးပြုခြင်း
+            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+            for (x, y, w, h) in faces:
+                face_roi = gray_frame[y:y+h, x:x+w]
+                face_resized = cv2.resize(face_roi, (100, 100))
+                
+                # ပုံနှစ်ခု တူညီမှုနှုန်းကို တိုက်စစ်ခြင်း (Template Matching)
+                res = cv2.matchTemplate(face_resized, suspect_gray, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(res)
+
+                # တူညီမှုနှုန်း 60% ကျော်ပါက တရားခံတွေ့ရှိဟု သတ်မှတ်မည်
+                if max_val > 0.6:
+                    match_found = True
                     break
-        if found_suspect:
+
+        if match_found:
             break
-            
+
     cap.release()
-    if os.path.exists(temp_video_path):
-        os.remove(temp_video_path)
-        
-    if found_suspect:
-        return {"status": "Suspect Found", "message": f"🚨 တရားခံ ({matched_name}) ကို တွေ့ရှိရပါသည်!"}
+    os.makedirs("temp", exist_ok=True)
+    if os.path.exists(video_path):
+        os.remove(video_path)
+
+    if match_found:
+        return {"status": "matched", "message": "တရားခံကို ဗီဒီယိုထဲတွင် တွေ့ရှိရပါသည်!"}
     else:
-        return {"status": "Not Found", "message": "တရားခံ ရှာမတွေ့ပါ။"}
+        return {"status": "not_matched", "message": "တရားခံအား မတွေ့ရှိရပါ။"}
+    
