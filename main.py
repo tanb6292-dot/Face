@@ -21,6 +21,8 @@ async def check_video(file: UploadFile = File(...)):
         os.remove(temp_video_path)
         return "Suspect image not found on server"
 
+    # suspect ပုံကို အချိုးကျ အရွယ်အစားသတ်မှတ်ခြင်း
+    suspect_gray = cv2.resize(suspect_img, (100, 100))
     match_found = False
     frame_count = 0
 
@@ -30,33 +32,20 @@ async def check_video(file: UploadFile = File(...)):
             break
         
         frame_count += 1
-        # ဖရိမ်တိုင်းကို သေချာစစ်ဆေးရန် (1 ဖရိမ်ခြားတစ်ခါ)
-        if frame_count % 2 == 0:
+        # ၅ ဖရိမ်တစ်ခါ စစ်ဆေးမည်
+        if frame_count % 5 == 0:
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            frame_resized = cv2.resize(gray_frame, (100, 100))
             
-            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-            faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
+            res = cv2.matchTemplate(frame_resized, suspect_gray, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(res)
+            
+            print(f"Frame {frame_count} - Match Score: {max_val}")
 
-            for (x, y, w, h) in faces:
-                face_roi = gray_frame[y:y+h, x:x+w]
-                
-                # ပုံအရွယ်အစား မတူနိုင်သည်ကို ဖြေရှင်းရန် Suspect ပုံကို မျက်နှာအရွယ်အစားအလိုက် ညှိခြင်း
-                try:
-                    suspect_resized = cv2.resize(suspect_img, (w, h))
-                    res = cv2.matchTemplate(face_roi, suspect_resized, cv2.TM_CCOEFF_NORMED)
-                    _, max_val, _, _ = cv2.minMaxLoc(res)
-                    
-                    print(f"Frame {frame_count} - Match Score: {max_val}") # Render Logs တွင် Score ကို ကြည့်ရန်
-
-                    # ⚠️ Threshold ကို 0.25 သို့ အလွန်လွယ်ကူအောင် လျှော့ချထားပါသည်
-                    if max_val > 0.25:
-                        match_found = True
-                        break
-                except Exception as e:
-                    continue
-
-        if match_found:
-            break
+            # Threshold တန်ဖိုး
+            if max_val > 0.25:
+                match_found = True
+                break
 
     cap.release()
     os.remove(temp_video_path)
@@ -65,4 +54,4 @@ async def check_video(file: UploadFile = File(...)):
         return "Found Match!"
     else:
         return "Not Found"
-        
+    
