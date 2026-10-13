@@ -54,7 +54,7 @@ async def check_video(file: UploadFile = File(...)):
     match_percentage = max(0.0, highest_score) * 100
 
     # လိုအပ်သော Threshold တန်ဖိုး (၁၅% နှင့်အထက်ဆိုလျှင် တွေ့ရှိသည်ဟု သတ်မှတ်မည်)
-    if match_percentage > 15.0:
+    if match_percentage > 10.0:
         return {
             "status": "Found Match",
             "percentage": f"{match_percentage:.2f}%"
